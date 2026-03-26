@@ -10,11 +10,12 @@ Stateless TypeScript library for Decern domain logic. It provides pure functions
 - no network calls
 - no Next.js/Supabase dependencies
 
-It is consumed by `decern-core` and `decern-cloud`.
+It is consumed by `decern-core`, `decern-gate`, and `decern-cloud`.
 
 ## Package
 
 - NPM name: `@decern/protocol`
+- Current version: `0.1.1`
 - Entry points:
   - `@decern/protocol`
   - `@decern/protocol/adr`
@@ -43,54 +44,19 @@ npm install
 npm run build
 ```
 
-## Design Principles
+## Local Link In decern-core
 
-- Pure functions with deterministic outputs
-- Reusable across CLI, backend, and UI layers
-- Easy to test and version independently
-
-## License
-
-Public package distributed with the Decern open ecosystem.
-# decern-protocol
-
-Stateless core library for the Decern ecosystem. Pure functions for ADR management, policy evaluation, and decision validation.
-
-**Repository:** https://github.com/decernhq/decern-protocol
-
-## Architecture
-
-```
-decern (open)       ← Next.js app (UI + API routes)
-  ├── protocol/     ← THIS REPO (stateless core logic)
-  └── cloud/        ← Private repo (Stripe, GitHub, Judge)
-```
-
-`decern-protocol` contains pure, database-independent functions used by both `decern-app` and `decern-cloud`.
-
-## Setup
-
-Clone this repo into the `protocol/` directory of the main Decern project:
+Clone this repository into the `protocol/` directory of the main Decern project if you want to develop protocol locally:
 
 ```bash
 cd /path/to/decern
 git clone https://github.com/decernhq/decern-protocol.git protocol
 ```
 
-The `protocol/` directory is git-ignored by the main repo.
+In production build flows, `decern-core` resolves protocol from npm (`@decern/protocol`). A local `protocol/` directory is only needed when developing protocol side-by-side.
 
-## What belongs here
+## Design Principles
 
-| Module | Description |
-|--------|-------------|
-| `src/adr/` | ADR markdown parsing and formatting |
-| `src/policies/` | Decision Gate policy evaluation (pure functions) |
-| `src/refs/` | ADR reference generation (`ADR-001`, `ADR-002`, ...) |
-| `src/types/` | Shared TypeScript types (Decision, Project, Workspace) |
-
-## Principles
-
-- **Stateless**: no database queries, no side effects
-- **Pure functions**: input → output, fully testable
-- **Zero dependencies**: no Supabase, no Next.js, no framework
-- **Reusable**: works in Node.js, browser, edge functions, CLI
+- Pure functions with deterministic outputs
+- Reusable across CLI, backend, and UI layers
+- Easy to test and version independently
