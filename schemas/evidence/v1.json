@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decern.dev/schemas/evidence/v1.json",
+  "title": "Decern Evidence Record v1",
+  "description": "Audit-grade evidence record for a single gate run. Hash-chained and cryptographically signed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence_id",
+    "schema_version",
+    "timestamp_utc",
+    "timestamp_source",
+    "workspace_id",
+    "repository_identifier",
+    "pull_request_id",
+    "commit_sha",
+    "base_commit_sha",
+    "author_identity",
+    "ci_provider",
+    "decision_id",
+    "decision_version",
+    "decision_content_hash",
+    "diff_hash",
+    "diff_size_bytes",
+    "diff_files_touched",
+    "judge_invocation",
+    "deterministic_checks",
+    "verdict",
+    "reason_code",
+    "reason_detail",
+    "previous_evidence_hash",
+    "current_evidence_hash",
+    "signature"
+  ],
+  "properties": {
+    "evidence_id": {
+      "type": "string",
+      "description": "UUID v7 (time-ordered) uniquely identifying this evidence record."
+    },
+    "schema_version": {
+      "const": "decern_evidence_v1",
+      "description": "Schema version identifier. Always 'decern_evidence_v1' for this schema."
+    },
+    "timestamp_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp with microsecond precision in UTC."
+    },
+    "timestamp_source": {
+      "enum": ["system_ntp", "rfc3161_tsa"],
+      "description": "How the timestamp was obtained. v1 only supports 'system_ntp'."
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Decern workspace ID that owns this gate run."
+    },
+    "repository_identifier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical repository identifier, e.g. 'github.com/acme/payments'."
+    },
+    "pull_request_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Pull/merge request identifier within the repository."
+    },
+    "commit_sha": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Head commit SHA being evaluated."
+    },
+    "base_commit_sha": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Base commit SHA for the diff."
+    },
+    "author_identity": {
+      "$ref": "#/$defs/AuthorIdentity",
+      "description": "Identity of the PR/commit author as reported by the CI provider."
+    },
+    "ci_provider": {
+      "enum": ["github_actions", "gitlab_ci", "bitbucket_pipelines", "jenkins", "azure_devops", "unknown"],
+      "description": "CI system that triggered the gate run."
+    },
+    "decision_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ID of the architecture decision evaluated against."
+    },
+    "decision_version": {
+      "type": "string",
+      "description": "Version of the decision at evaluation time (semver or integer)."
+    },
+    "decision_content_hash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SHA-256 hash of the canonical decision content at evaluation time."
+    },
+    "diff_hash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SHA-256 hash of the canonical diff analyzed."
+    },
+    "diff_size_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Size of the diff in bytes."
+    },
+    "diff_files_touched": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of file paths touched by the diff."
+    },
+    "judge_invocation": {
+      "oneOf": [
+        { "$ref": "#/$defs/JudgeInvocation" },
+        { "type": "null" }
+      ],
+      "description": "LLM Judge invocation details. Null if the run was deterministic-only or judge was not invoked."
+    },
+    "deterministic_checks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DeterministicCheckResult" },
+      "description": "Results of deterministic checks. May be empty."
+    },
+    "verdict": {
+      "enum": ["pass", "warn", "block"],
+      "description": "Final gate verdict."
+    },
+    "reason_code": {
+      "enum": [
+        "PASS", "PASS_OBSERVATION", "OUT_OF_SCOPE", "DEPRECATED_PATTERN",
+        "UNAPPROVED_DEPENDENCY", "NO_DECISION_REFERENCED", "DECISION_NOT_FOUND",
+        "DECISION_NOT_APPROVED", "LINKED_PR_REQUIRED", "DETERMINISTIC_RULE_VIOLATION",
+        "JUDGE_BLOCKED", "JUDGE_LOW_CONFIDENCE", "JUDGE_UNAVAILABLE",
+        "OVERRIDE", "POLICY_VIOLATION"
+      ],
+      "description": "Structured reason for the verdict."
+    },
+    "reason_detail": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Human-readable explanation of the verdict."
+    },
+    "override": {
+      "$ref": "#/$defs/Override",
+      "description": "Present only if this record represents an override of a previous block."
+    },
+    "previous_evidence_hash": {
+      "type": ["string", "null"],
+      "description": "SHA-256 hash of the previous evidence record in this workspace's chain. Null for the first record."
+    },
+    "current_evidence_hash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SHA-256 hash computed over the canonical JSON of all fields except signature and current_evidence_hash."
+    },
+    "signature": {
+      "$ref": "#/$defs/Signature",
+      "description": "Cryptographic signature over current_evidence_hash."
+    }
+  },
+  "$defs": {
+    "AuthorIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "id", "email", "display_name"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "email": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "JudgeInvocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "model_version", "temperature", "top_p", "prompt_hash", "response_hash", "latency_ms", "token_usage"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "model_version": { "type": "string" },
+        "temperature": { "type": ["number", "null"] },
+        "top_p": { "type": ["number", "null"] },
+        "prompt_hash": { "type": "string", "minLength": 1 },
+        "response_hash": { "type": "string", "minLength": 1 },
+        "latency_ms": { "type": "number", "minimum": 0 },
+        "token_usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input_tokens", "output_tokens"],
+          "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "DeterministicCheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "check_type", "result", "details_hash"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "check_type": { "enum": ["path_denylist", "dependency_denylist", "regex_required", "regex_forbidden", "file_type_denylist", "size_threshold"] },
+        "result": { "enum": ["pass", "fail"] },
+        "details_hash": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["override_id", "overridden_by", "override_reason", "override_timestamp", "override_auth_method"],
+      "properties": {
+        "override_id": { "type": "string", "minLength": 1 },
+        "overridden_by": { "$ref": "#/$defs/AuthorIdentity" },
+        "override_reason": { "type": "string", "minLength": 20, "maxLength": 1000 },
+        "override_timestamp": { "type": "string", "format": "date-time" },
+        "override_auth_method": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "value"],
+      "properties": {
+        "algorithm": { "type": "string", "minLength": 1 },
+        "key_id": { "type": "string", "minLength": 1 },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
