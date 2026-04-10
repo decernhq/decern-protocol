@@ -1,184 +1,83 @@
 import { describe, it, expect } from "vitest";
-import { parseAdrMarkdown, type ParsedAdr } from "./parser";
+import { parseAdrMarkdown } from "./parser.js";
 
-describe("parseAdrMarkdown", () => {
-  const fullAdr = `# Use PostgreSQL for primary database
-
-**Status:** Accepted
-
-**Author:** John Doe
-
-**Date:** 2025-01-15
-
-**Tags:** database, infrastructure
+const VALID_ADR = `---
+id: ADR-001
+title: Use Zod for API input validation
+status: approved
+enforcement: blocking
+scope:
+  - src/api/**
+  - src/middleware/**
+supersedes: null
+date: 2026-04-10
+---
 
 ## Context
-
-We need a reliable database for our application.
-
-## Options Considered
-
-- PostgreSQL
-- MySQL
-- MongoDB
+We need consistent input validation across all API endpoints.
 
 ## Decision
-
-We chose PostgreSQL for its reliability and JSON support.
+Use Zod for all API input validation.
 
 ## Consequences
+All endpoints must define a Zod schema for request bodies.
+`;
 
-Better reliability but more complex setup.
-
-## Pull Requests
-
-- https://github.com/org/repo/pull/1
-- https://github.com/org/repo/pull/2
-
-## External Links
-
-- [PostgreSQL Docs](https://www.postgresql.org/docs/)
-- https://wiki.internal/db-decision
-
-## Supersedes
-
-ADR-001`;
-
-  it("parses title from h1", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.title).toBe("Use PostgreSQL for primary database");
+describe("parseAdrMarkdown", () => {
+  it("parses a valid ADR with all fields", () => {
+    const adr = parseAdrMarkdown(VALID_ADR);
+    expect(adr).not.toBeNull();
+    expect(adr!.id).toBe("ADR-001");
+    expect(adr!.title).toBe("Use Zod for API input validation");
+    expect(adr!.status).toBe("approved");
+    expect(adr!.enforcement).toBe("blocking");
+    expect(adr!.scope).toEqual(["src/api/**", "src/middleware/**"]);
+    expect(adr!.supersedes).toBeNull();
+    expect(adr!.date).toBe("2026-04-10");
+    expect(adr!.context).toContain("consistent input validation");
+    expect(adr!.decision).toContain("Use Zod");
+    expect(adr!.consequences).toContain("Zod schema");
   });
 
-  it("parses status (lowercased)", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.status).toBe("accepted");
+  it("returns null for non-frontmatter content", () => {
+    expect(parseAdrMarkdown("# Just a header\nSome text")).toBeNull();
   });
 
-  it("parses author", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.author).toBe("John Doe");
+  it("returns null for missing id", () => {
+    expect(parseAdrMarkdown("---\ntitle: Test\nstatus: approved\n---\n## Decision\ntest")).toBeNull();
   });
 
-  it("parses date", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.date).toBe("2025-01-15");
+  it("returns null for missing title", () => {
+    expect(parseAdrMarkdown("---\nid: ADR-001\nstatus: approved\n---\n## Decision\ntest")).toBeNull();
   });
 
-  it("parses tags as lowercase array", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.tags).toEqual(["database", "infrastructure"]);
+  it("defaults status to proposed", () => {
+    const adr = parseAdrMarkdown("---\nid: ADR-001\ntitle: Test\n---\n## Decision\ntest");
+    expect(adr!.status).toBe("proposed");
   });
 
-  it("parses context section", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.context).toBe("We need a reliable database for our application.");
+  it("defaults enforcement to warning", () => {
+    const adr = parseAdrMarkdown("---\nid: ADR-001\ntitle: Test\nstatus: approved\n---\n## Decision\ntest");
+    expect(adr!.enforcement).toBe("warning");
   });
 
-  it("parses options considered", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.options).toEqual(["PostgreSQL", "MySQL", "MongoDB"]);
+  it("handles empty scope", () => {
+    const adr = parseAdrMarkdown("---\nid: ADR-001\ntitle: Test\nstatus: approved\nscope:\n---\n## Decision\ntest");
+    expect(adr!.scope).toEqual([]);
   });
 
-  it("parses decision section", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.decision).toBe("We chose PostgreSQL for its reliability and JSON support.");
+  it("handles inline array scope", () => {
+    const adr = parseAdrMarkdown("---\nid: ADR-001\ntitle: Test\nscope: [src/**, lib/**]\n---\n## Decision\ntest");
+    expect(adr!.scope).toEqual(["src/**", "lib/**"]);
   });
 
-  it("parses consequences section", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.consequences).toBe("Better reliability but more complex setup.");
+  it("preserves rawContent", () => {
+    const adr = parseAdrMarkdown(VALID_ADR);
+    expect(adr!.rawContent).toBe(VALID_ADR);
   });
 
-  it("parses pull request URLs", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.pullRequestUrls).toEqual([
-      "https://github.com/org/repo/pull/1",
-      "https://github.com/org/repo/pull/2",
-    ]);
-  });
-
-  it("parses external links with labels", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.externalLinks[0]).toEqual({
-      url: "https://www.postgresql.org/docs/",
-      label: "PostgreSQL Docs",
-    });
-  });
-
-  it("parses external links without labels", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.externalLinks[1]).toEqual({
-      url: "https://wiki.internal/db-decision",
-    });
-  });
-
-  it("parses supersedes ref", () => {
-    const result = parseAdrMarkdown(fullAdr);
-    expect(result.supersedes).toBe("ADR-001");
-  });
-
-  /* ── Edge cases ─────────────────────────────────────────────────── */
-
-  it("defaults status to proposed when missing", () => {
-    const md = `# My Decision\n\n## Context\n\nSome context.`;
-    const result = parseAdrMarkdown(md);
-    expect(result.status).toBe("proposed");
-  });
-
-  it("returns null for missing author", () => {
-    const md = `# My Decision\n\n**Status:** Draft`;
-    const result = parseAdrMarkdown(md);
-    expect(result.author).toBeNull();
-  });
-
-  it("returns null for missing date", () => {
-    const md = `# My Decision\n\n**Status:** Draft`;
-    const result = parseAdrMarkdown(md);
-    expect(result.date).toBeNull();
-  });
-
-  it("returns empty arrays for missing optional sections", () => {
-    const md = `# My Decision\n\n**Status:** Draft\n\n## Context\n\nJust context.`;
-    const result = parseAdrMarkdown(md);
-    expect(result.options).toEqual([]);
-    expect(result.pullRequestUrls).toEqual([]);
-    expect(result.externalLinks).toEqual([]);
-  });
-
-  it("returns null supersedes when section is missing", () => {
-    const md = `# My Decision\n\n## Context\n\nContext here.`;
-    const result = parseAdrMarkdown(md);
-    expect(result.supersedes).toBeNull();
-  });
-
-  it("returns empty tags when not specified", () => {
-    const md = `# My Decision\n\n## Context\n\nContext.`;
-    const result = parseAdrMarkdown(md);
-    expect(result.tags).toEqual([]);
-  });
-
-  it("handles empty markdown", () => {
-    const result = parseAdrMarkdown("");
-    expect(result.title).toBe("");
-    expect(result.status).toBe("proposed");
-    expect(result.context).toBe("");
-  });
-
-  it("handles author with empty value", () => {
-    const md = `# Test\n\n**Author:** `;
-    const result = parseAdrMarkdown(md);
-    expect(result.author).toBeNull();
-  });
-
-  it("lowercases tags", () => {
-    const md = `# Test\n\n**Tags:** API, Database, SECURITY`;
-    const result = parseAdrMarkdown(md);
-    expect(result.tags).toEqual(["api", "database", "security"]);
-  });
-
-  it("filters empty tags from comma-separated list", () => {
-    const md = `# Test\n\n**Tags:** api,, ,security`;
-    const result = parseAdrMarkdown(md);
-    expect(result.tags).toEqual(["api", "security"]);
+  it("parses supersedes field", () => {
+    const adr = parseAdrMarkdown("---\nid: ADR-002\ntitle: Use gRPC\nstatus: approved\nsupersedes: ADR-001\n---\n## Decision\nMigrate to gRPC");
+    expect(adr!.supersedes).toBe("ADR-001");
   });
 });

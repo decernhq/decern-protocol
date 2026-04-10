@@ -1,119 +1,180 @@
 /**
- * Parse a pure-Markdown ADR file into structured decision fields.
+ * ADR parser: YAML frontmatter + markdown body.
+ *
+ * Format:
+ * ---
+ * id: ADR-001
+ * title: Use Zod for API input validation
+ * status: approved
+ * enforcement: blocking
+ * scope:
+ *   - src/api/**
+ * supersedes: null
+ * date: 2026-04-10
+ * ---
+ *
+ * ## Context
+ * ...
+ * ## Decision
+ * ...
+ * ## Consequences
+ * ...
  */
+
+export const ADR_STATUSES = ["proposed", "approved", "superseded", "rejected"] as const;
+export type AdrStatus = (typeof ADR_STATUSES)[number];
+
+export const ADR_ENFORCEMENT = ["blocking", "warning"] as const;
+export type AdrEnforcement = (typeof ADR_ENFORCEMENT)[number];
+
 export interface ParsedAdr {
+  id: string;
   title: string;
-  status: string;
-  author: string | null;
+  status: AdrStatus;
+  enforcement: AdrEnforcement;
+  scope: string[];
+  supersedes: string | null;
   date: string | null;
-  tags: string[];
   context: string;
-  options: string[];
   decision: string;
   consequences: string;
-  pullRequestUrls: string[];
-  externalLinks: { url: string; label?: string }[];
-  supersedes: string | null;
+  /** Raw file content (for hashing) */
+  rawContent: string;
 }
 
-export function parseAdrMarkdown(markdown: string): ParsedAdr {
-  const lines = markdown.split("\n");
+/**
+ * Parse an ADR file (YAML frontmatter + markdown body).
+ * Returns null if the file is not a valid ADR.
+ */
+export function parseAdrMarkdown(content: string): ParsedAdr | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("---")) return null;
 
-  let title = "";
-  let status = "proposed";
-  let author: string | null = null;
-  let date: string | null = null;
-  let tags: string[] = [];
-  let supersedes: string | null = null;
+  const endIndex = trimmed.indexOf("---", 3);
+  if (endIndex === -1) return null;
 
-  const sections: Record<string, string[]> = {};
-  let currentSection = "__header";
-  sections[currentSection] = [];
+  const frontmatter = trimmed.slice(3, endIndex).trim();
+  const body = trimmed.slice(endIndex + 3).trim();
 
-  for (const line of lines) {
-    const h1 = line.match(/^#\s+(.+)$/);
-    if (h1 && !title) {
-      title = h1[1].trim();
-      continue;
-    }
+  const fm = parseSimpleYaml(frontmatter);
 
-    const statusMatch = line.match(/^\*\*Status:\*\*\s*(.+)$/i);
-    if (statusMatch) {
-      status = statusMatch[1].trim().toLowerCase();
-      continue;
-    }
+  const id = stringVal(fm.id);
+  const title = stringVal(fm.title);
+  if (!id || !title) return null;
 
-    const tagsMatch = line.match(/^\*\*Tags:\*\*\s*(.+)$/i);
-    if (tagsMatch) {
-      tags = tagsMatch[1]
-        .split(",")
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean);
-      continue;
-    }
+  const statusRaw = stringVal(fm.status)?.toLowerCase();
+  const status: AdrStatus = ADR_STATUSES.includes(statusRaw as AdrStatus)
+    ? (statusRaw as AdrStatus)
+    : "proposed";
 
-    const authorMatch = line.match(/^\*\*Author:\*\*\s*(.+)$/i);
-    if (authorMatch) {
-      const parsed = authorMatch[1].trim();
-      author = parsed.length > 0 ? parsed : null;
-      continue;
-    }
+  const enforcementRaw = stringVal(fm.enforcement)?.toLowerCase();
+  const enforcement: AdrEnforcement = ADR_ENFORCEMENT.includes(enforcementRaw as AdrEnforcement)
+    ? (enforcementRaw as AdrEnforcement)
+    : "warning";
 
-    const dateMatch = line.match(/^\*\*Date:\*\*\s*(.+)$/i);
-    if (dateMatch) {
-      const parsed = dateMatch[1].trim();
-      date = parsed.length > 0 ? parsed : null;
-      continue;
-    }
+  const scope = arrayVal(fm.scope);
+  const supersedes = stringVal(fm.supersedes) || null;
+  const date = stringVal(fm.date) || null;
 
-    const h2 = line.match(/^##\s+(.+)$/);
-    if (h2) {
-      currentSection = h2[1].trim().toLowerCase();
-      sections[currentSection] = [];
-      continue;
-    }
-
-    if (sections[currentSection]) {
-      sections[currentSection].push(line);
-    }
-  }
-
-  const getSection = (key: string) => (sections[key] || []).join("\n").trim();
-
-  const getListItems = (key: string): string[] =>
-    (sections[key] || [])
-      .map((l) => l.replace(/^[-*]\s+/, "").trim())
-      .filter(Boolean);
-
-  const pullRequestUrls = getListItems("pull requests").filter((u) => u.startsWith("http"));
-
-  const externalLinks: { url: string; label?: string }[] = getListItems("external links").map((item) => {
-    const mdLink = item.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (mdLink) return { url: mdLink[2], label: mdLink[1] };
-    if (item.startsWith("http")) return { url: item };
-    return { url: item };
-  });
-
-  const supersedesRaw = getSection("supersedes");
-  if (supersedesRaw) {
-    const ref = supersedesRaw.match(/ADR-\d+/i);
-    supersedes = ref ? ref[0] : supersedesRaw.trim() || null;
-  }
-
-  const options = sections["options considered"] ? getListItems("options considered") : [];
+  const sections = parseMarkdownSections(body);
 
   return {
+    id,
     title,
     status,
-    author,
-    date,
-    tags,
-    context: getSection("context"),
-    options,
-    decision: getSection("decision"),
-    consequences: getSection("consequences"),
-    pullRequestUrls,
-    externalLinks,
+    enforcement,
+    scope,
     supersedes,
+    date,
+    context: sections.context ?? "",
+    decision: sections.decision ?? "",
+    consequences: sections.consequences ?? "",
+    rawContent: content,
   };
+}
+
+// ── Minimal YAML parser for frontmatter ──
+
+function parseSimpleYaml(yaml: string): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const lines = yaml.split("\n");
+  let currentKey = "";
+  let currentArray: string[] | null = null;
+
+  for (const line of lines) {
+    const arrayItem = line.match(/^\s+-\s+(.+)$/);
+    if (arrayItem && currentKey && currentArray) {
+      currentArray.push(arrayItem[1].trim());
+      continue;
+    }
+
+    if (currentArray && currentKey) {
+      result[currentKey] = currentArray;
+      currentArray = null;
+    }
+
+    const kv = line.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+    if (kv) {
+      currentKey = kv[1];
+      const value = kv[2].trim();
+
+      if (value === "" || value === "null") {
+        currentArray = [];
+        continue;
+      }
+
+      if (value.startsWith("[") && value.endsWith("]")) {
+        result[currentKey] = value
+          .slice(1, -1)
+          .split(",")
+          .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+          .filter(Boolean);
+        currentKey = "";
+        continue;
+      }
+
+      result[currentKey] = value.replace(/^["']|["']$/g, "");
+      currentKey = "";
+      continue;
+    }
+  }
+
+  if (currentArray && currentKey) {
+    result[currentKey] = currentArray.length > 0 ? currentArray : null;
+  }
+
+  return result;
+}
+
+function stringVal(v: unknown): string | undefined {
+  if (typeof v === "string") return v;
+  return undefined;
+}
+
+function arrayVal(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  return [];
+}
+
+function parseMarkdownSections(body: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  let current = "";
+
+  for (const line of body.split("\n")) {
+    const h2 = line.match(/^##\s+(.+)$/);
+    if (h2) {
+      current = h2[1].trim().toLowerCase();
+      sections[current] = "";
+      continue;
+    }
+    if (current) {
+      sections[current] += (sections[current] ? "\n" : "") + line;
+    }
+  }
+
+  for (const key of Object.keys(sections)) {
+    sections[key] = sections[key].trim();
+  }
+
+  return sections;
 }

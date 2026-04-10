@@ -1,134 +1,66 @@
 /**
- * Format structured decision fields into a pure-Markdown ADR file.
+ * Format structured ADR fields into YAML frontmatter + markdown.
  */
+
+import type { AdrStatus, AdrEnforcement } from "./parser.js";
+
 export interface AdrFields {
+  id: string;
   title: string;
-  status: string;
-  author?: string | null;
-  date?: string | null;
-  tags: string[];
+  status: AdrStatus;
+  enforcement: AdrEnforcement;
+  scope: string[];
+  supersedes: string | null;
+  date: string | null;
   context: string;
-  options: string[];
   decision: string;
   consequences: string;
-  pullRequestUrls: string[];
-  externalLinks: { url: string; label?: string }[];
-  supersedes: string | null;
 }
 
 export function formatAdrMarkdown(fields: AdrFields): string {
   const lines: string[] = [];
 
-  lines.push(`# ${fields.title}`);
+  // Frontmatter
+  lines.push("---");
+  lines.push(`id: ${fields.id}`);
+  lines.push(`title: ${fields.title}`);
+  lines.push(`status: ${fields.status}`);
+  lines.push(`enforcement: ${fields.enforcement}`);
+  if (fields.scope.length > 0) {
+    lines.push("scope:");
+    for (const s of fields.scope) {
+      lines.push(`  - ${s}`);
+    }
+  } else {
+    lines.push("scope:");
+  }
+  lines.push(`supersedes: ${fields.supersedes ?? "null"}`);
+  lines.push(`date: ${fields.date ?? new Date().toISOString().slice(0, 10)}`);
+  lines.push("---");
   lines.push("");
-  lines.push(`**Status:** ${capitalize(fields.status)}`);
-  lines.push("");
 
-  if (fields.author && fields.author.trim().length > 0) {
-    lines.push(`**Author:** ${fields.author.trim()}`);
-    lines.push("");
-  }
-
-  if (fields.date && fields.date.trim().length > 0) {
-    lines.push(`**Date:** ${fields.date.trim()}`);
-    lines.push("");
-  }
-
-  if (fields.tags.length > 0) {
-    lines.push(`**Tags:** ${fields.tags.join(", ")}`);
-    lines.push("");
-  }
-
+  // Body
   lines.push("## Context");
   lines.push("");
-  lines.push(fields.context || "_(no context provided)_");
+  lines.push(fields.context || "(no context provided)");
   lines.push("");
-
-  if (fields.options.length > 0) {
-    lines.push("## Options Considered");
-    lines.push("");
-    for (const opt of fields.options) {
-      lines.push(`- ${opt}`);
-    }
-    lines.push("");
-  }
-
   lines.push("## Decision");
   lines.push("");
-  lines.push(fields.decision || "_(no decision provided)_");
+  lines.push(fields.decision || "(no decision provided)");
   lines.push("");
-
   lines.push("## Consequences");
   lines.push("");
-  lines.push(fields.consequences || "_(no consequences provided)_");
+  lines.push(fields.consequences || "(no consequences provided)");
   lines.push("");
-
-  if (fields.pullRequestUrls.length > 0) {
-    lines.push("## Pull Requests");
-    lines.push("");
-    for (const url of fields.pullRequestUrls) {
-      lines.push(`- ${url}`);
-    }
-    lines.push("");
-  }
-
-  if (fields.externalLinks.length > 0) {
-    lines.push("## External Links");
-    lines.push("");
-    for (const link of fields.externalLinks) {
-      if (link.label) {
-        lines.push(`- [${link.label}](${link.url})`);
-      } else {
-        lines.push(`- ${link.url}`);
-      }
-    }
-    lines.push("");
-  }
-
-  if (fields.supersedes) {
-    lines.push("## Supersedes");
-    lines.push("");
-    lines.push(fields.supersedes);
-    lines.push("");
-  }
 
   return lines.join("\n");
 }
 
-export function slugify(text: string): string {
-  return text
+export function adrFilename(id: string, title: string): string {
+  const slug = title
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
+    .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 60);
-}
-
-export function adrFilename(adrRef: string, title: string): string {
-  return `adr/${adrRef}-${slugify(title)}.md`;
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-export function adrCommitMessageCreate(adrRef: string, title: string): string {
-  return `docs: add ${adrRef} - ${title}`;
-}
-
-export function adrCommitMessageUpdate(adrRef: string, title: string): string {
-  return `docs: update ${adrRef} - ${title}`;
-}
-
-export function adrCommitMessageRename(adrRef: string): string {
-  return `docs: rename ${adrRef}`;
-}
-
-export function adrCommitMessageStatus(adrRef: string, status: string): string {
-  return `docs: ${status} ${adrRef}`;
-}
-
-export function adrCommitMessageDelete(adrRef: string, title: string): string {
-  return `docs: remove ${adrRef} - ${title}`;
+  return `${id.toLowerCase()}-${slug}.md`;
 }
