@@ -1,6 +1,11 @@
 /**
  * Verdict computation: combines judge outcome and deterministic checks
  * to produce the final gate verdict, respecting judge_mode.
+ *
+ * judge_mode values:
+ * - "blocking": judge can block the gate
+ * - "advisory": judge runs but cannot block (warns only)
+ * - "deterministic_only": verdict from deterministic checks only, judge is recorded but ignored
  */
 
 import type { Verdict, ReasonCode, JudgeMode } from "./record.js";
@@ -16,8 +21,6 @@ export interface ComputeVerdictInput {
   judgeOutcome: JudgeOutcomeForVerdict | null;
   deterministicResults: CheckResult[];
   judgeMode: JudgeMode;
-  /** True if Free plan or judge_blocking=false — judge never blocks. */
-  advisory: boolean;
 }
 
 export interface ComputeVerdictOutput {
@@ -32,11 +35,11 @@ export interface ComputeVerdictOutput {
  * Rules:
  * - A deterministic check failure always blocks (in any mode).
  * - In `deterministic_only` mode: judge outcome is ignored for verdict.
- * - In `advisory` mode: judge contributes to verdict alongside deterministic checks.
- * - If `advisory` flag is true (Free plan / judge_blocking off): judge never blocks, only warns.
+ * - In `advisory` mode: judge runs but never blocks, only warns.
+ * - In `blocking` mode: judge can block.
  */
 export function computeVerdict(input: ComputeVerdictInput): ComputeVerdictOutput {
-  const { judgeOutcome, deterministicResults, judgeMode, advisory } = input;
+  const { judgeOutcome, deterministicResults, judgeMode } = input;
 
   // Step 1: Check deterministic results (always authoritative)
   const failedChecks = deterministicResults.filter((r) => r.result === "fail");
@@ -60,9 +63,8 @@ export function computeVerdict(input: ComputeVerdictInput): ComputeVerdictOutput
     };
   }
 
-  // Step 3: Advisory mode — judge contributes
+  // Step 3: No judge invocation — pass on deterministic checks alone
   if (!judgeOutcome) {
-    // No judge invocation — pass on deterministic checks alone
     return {
       verdict: "pass",
       reasonCode: "PASS",
@@ -70,8 +72,9 @@ export function computeVerdict(input: ComputeVerdictInput): ComputeVerdictOutput
     };
   }
 
+  // Step 4: Judge ran
   if (!judgeOutcome.allowed) {
-    if (advisory) {
+    if (judgeMode === "advisory") {
       // Advisory: log warning but don't block
       return {
         verdict: "warn",
@@ -79,6 +82,7 @@ export function computeVerdict(input: ComputeVerdictInput): ComputeVerdictOutput
         reasonDetail: `Judge (advisory) would block: ${judgeOutcome.reason}`,
       };
     }
+    // Blocking mode
     return {
       verdict: "block",
       reasonCode: "JUDGE_BLOCKED",

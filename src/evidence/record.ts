@@ -54,7 +54,7 @@ export const CHECK_TYPES = [
 ] as const;
 export type CheckType = (typeof CHECK_TYPES)[number];
 
-export const JUDGE_MODES = ["advisory", "deterministic_only"] as const;
+export const JUDGE_MODES = ["blocking", "advisory", "deterministic_only"] as const;
 export type JudgeMode = (typeof JUDGE_MODES)[number];
 
 // ── Sub-objects ─────────────────────────────────────────────────────
